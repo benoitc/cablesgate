@@ -22,6 +22,7 @@ import sys
 
 from BeautifulSoup import BeautifulSoup
 from couchdbkit import Database
+from couchdbkit.exceptions import BulkSaveError
 import nltk
 
 fmt = r"%(asctime)s [%(levelname)s] %(message)s"
@@ -33,9 +34,10 @@ log = logging.getLogger("cablegate")
 
 class Extractor(object):
 
-    def __init__(self, cables_path):
+    def __init__(self, db, cables_path):
         self.cables_path = cables_path
         self.processed = 0
+        self.db = db
 
     def __iter__(self):
         return self.process()
@@ -46,6 +48,7 @@ class Extractor(object):
                 if fname.endswith(".html"):
                     self.processed += 1
                     cnt = self.parse(os.path.join(root, fname))
+                    
                     if cnt is not None:
                         yield cnt
                     else:
@@ -81,7 +84,10 @@ class Extractor(object):
             self.processed -= 1
 
 def save_docs(db, docs):
-    db.save_docs(docs)
+    try:
+        db.save_docs(docs, all_or_nothing=False)
+    except BulkSaveError:
+        pass
 
 def send(pool, db, docs):
     
@@ -94,19 +100,19 @@ def main(dburi, cables_path):
 
     log.info("Start processing")
 
-    extractor = Extractor(cables_path)
+    extractor = Extractor(db, cables_path)
     
     docs = []
     for doc in extractor:
         if len(docs) == 100:
             log.info("Sending to CouchDB")
-            db.save_docs(docs)
+            save_docs(db, docs)
             docs = []
         docs.append(doc)
 
     if docs:
         log.info("Sending to CouchDB")
-        db.save_docs(docs)
+        save_docs(db, docs)
     log.info("%s cables processed." % extractor.processed)
 
 if __name__ == "__main__":
