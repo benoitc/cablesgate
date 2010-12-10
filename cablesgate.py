@@ -37,7 +37,13 @@ class Extractor(object):
     def __init__(self, db, cables_path):
         self.cables_path = cables_path
         self.processed = 0
+        self.new = 0
         self.db = db
+        self.docids = self.load_ids()
+
+    def load_ids(self):
+        docs = self.db.all_docs()
+        return [r['id'] for r in docs]
 
     def __iter__(self):
         return self.process()
@@ -47,9 +53,12 @@ class Extractor(object):
             for fname in files:
                 if fname.endswith(".html"):
                     self.processed += 1
+
                     cnt = self.parse(os.path.join(root, fname))
-                    
-                    if cnt is not None:
+                    if cnt == True:
+                        continue
+                    elif cnt is not None:
+                        self.new += 1
                         yield cnt
                     else:
                         log.info("%s not processed" % fname)
@@ -63,6 +72,9 @@ class Extractor(object):
                 tbl = soup.find("table", { "class" : "cable" })
                 docid = tbl.findAll('tr')[1].\
                         findAll('td')[0].contents[1].contents[0]
+
+                if docid in self.docids:
+                    return True
 
                 doc = {
                         "_id": docid,
@@ -114,6 +126,8 @@ def main(dburi, cables_path):
         log.info("Sending to CouchDB")
         save_docs(db, docs)
     log.info("%s cables processed." % extractor.processed)
+    log.info("%s new cables." % extractor.new)
+
 
 if __name__ == "__main__":
     args = sys.argv[1:]
